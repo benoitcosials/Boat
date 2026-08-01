@@ -1,0 +1,20 @@
+{
+  "units": "mm",
+  "gears": [
+    {
+      "label": "bad_gear",
+      "teeth": 3,
+      "module": 1.7,
+      "pitch_diameter": 99.0,
+      "pressure_angle": 30.0,
+      "bore_diameter": -1
+    }
+  ],
+  "shafts": [],
+  "housing": {
+    "wall_thickness": 0.5,
+    "clearance_radial": 0.1
+  },
+  "bearings": [],
+  "fasteners": []
+}

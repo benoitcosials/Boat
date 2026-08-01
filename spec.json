@@ -1,0 +1,19 @@
+{
+  "part_name": "cube",
+  "description": "A 50x50x50mm solid test cube for Onshape injection validation",
+  "material": "PLA",
+  "units": "mm",
+  "overall_dimensions": {
+    "length": 50.0,
+    "width": 50.0,
+    "height": 50.0
+  },
+  "features": [],
+  "tolerances": {
+    "general": 0.3
+  },
+  "constraints": {
+    "min_wall_thickness": 1.2,
+    "max_overhang_angle": 45.0
+  }
+}

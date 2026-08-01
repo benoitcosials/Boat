@@ -1,0 +1,18 @@
+{
+  "part_name": "bad_part",
+  "description": "",
+  "units": "furlongs",
+  "overall_dimensions": {
+    "length": -10,
+    "height": 60.0
+  },
+  "features": [
+    {"type": "rocket_engine", "diameter": 0}
+  ],
+  "tolerances": {
+    "general": -0.5
+  },
+  "constraints": {
+    "min_wall_thickness": -1
+  }
+}

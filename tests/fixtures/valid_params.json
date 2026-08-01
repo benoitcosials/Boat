@@ -1,0 +1,38 @@
+{
+  "units": "mm",
+  "gears": [
+    {
+      "label": "input_gear",
+      "teeth": 15,
+      "module": 2.0,
+      "pitch_diameter": 30.0,
+      "pressure_angle": 20.0,
+      "face_width": 10.0,
+      "bore_diameter": 10.05
+    },
+    {
+      "label": "output_gear",
+      "teeth": 45,
+      "module": 2.0,
+      "pitch_diameter": 90.0,
+      "pressure_angle": 20.0,
+      "face_width": 10.0,
+      "bore_diameter": 25.05
+    }
+  ],
+  "shafts": [
+    {"label": "input_shaft", "diameter": 10.0, "length": 50.0},
+    {"label": "output_shaft", "diameter": 25.0, "length": 60.0}
+  ],
+  "housing": {
+    "wall_thickness": 3.0,
+    "clearance_radial": 1.0,
+    "clearance_axial": 0.5
+  },
+  "bearings": [
+    {"label": "input_bearing", "inner_diameter": 10.0, "outer_diameter": 26.0, "width": 8.0}
+  ],
+  "fasteners": [
+    {"label": "corner_mounts", "type": "socket_head", "diameter": 5.0, "count": 4}
+  ]
+}

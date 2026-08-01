@@ -1,0 +1,24 @@
+{
+  "part_name": "reducer_housing",
+  "description": "Housing for 3:1 gear reducer",
+  "material": "PLA",
+  "units": "mm",
+  "overall_dimensions": {
+    "length": 120.0,
+    "width": 80.0,
+    "height": 60.0
+  },
+  "features": [
+    {"type": "bore", "diameter": 10.0, "depth": 25.0, "label": "input_shaft"},
+    {"type": "bore", "diameter": 15.0, "depth": 25.0, "label": "output_shaft"},
+    {"type": "mounting_hole", "diameter": 5.0, "count": 4, "label": "corner_mounts"}
+  ],
+  "tolerances": {
+    "general": 0.2,
+    "bore": 0.05
+  },
+  "constraints": {
+    "min_wall_thickness": 1.2,
+    "max_overhang_angle": 45
+  }
+}

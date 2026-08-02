@@ -7,3 +7,6 @@ playwright>=1.40
 
 # --- STL Geometry Validation (QA Gates 3 & 4) ---
 trimesh>=4.0
+
+# --- Dev tooling (linter + LSP; cross-platform) ---
+ruff>=0.16

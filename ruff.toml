@@ -1,0 +1,17 @@
+# Ruff configuration — linter + LSP for this project.
+target-version = "py312"
+line-length = 100
+
+extend-exclude = [
+    ".venv",
+    ".browser-data",
+    ".opencode/archive",
+    ".playwright-mcp",
+    "tmp",
+]
+
+[lint]
+# E/W pycodestyle, F pyflakes, I import sorting, UP pyupgrade, B bugbear.
+select = ["E", "W", "F", "I", "UP", "B"]
+# Line length is left to the formatter (it keeps long strings / embedded DSL intact).
+ignore = ["E501"]

@@ -13,6 +13,7 @@ Layers:
     get_length_unit     read the document's workspace length unit
 """
 
+from .comments import CommentsClient
 from .context import DocumentContext
 from .feature_studio import FeatureStudioClient
 from .part_studio import PartStudioClient
@@ -21,6 +22,7 @@ from .units import get_length_unit
 from .versions import VersionsClient
 
 __all__ = [
+    "CommentsClient",
     "DocumentContext",
     "OnshapeError",
     "OnshapeSession",

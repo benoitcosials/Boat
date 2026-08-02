@@ -129,7 +129,36 @@ stricte 1995). Scans conservés dans `docs/optimist-plans-1948/`.
 > recouper section par section (hull_1/hull_2) avant génération. Écart assumé
 > avec le one-design moderne (bau 42" vs ~1130 mm).
 
-## 8. Historique
+## 8. Prochaines étapes (reprise)
+
+1. **Consolider les offsets 1948** (à partir de `hull_1.jpg`, `hull_2.jpg`,
+   `base*.jpg`) en un **tableau paramétrique** dans ce doc, marqué « d'après
+   plans 1948 » : par station (A/B/C + tableaux) — demi-largeur **bouchain** et
+   **liston**, **hauteurs** (bouchain, liston), profil de **rocker** ; largeurs
+   **bas/haut** des tableaux AV et AR.
+2. **Convertir impérial → mm** et **caler** sur les contraintes de classe (§3) :
+   longueur 2300, base-line/rocker (110/162 mm), étrave +40 mm, panneaux
+   développables. Noter les écarts 1948 ↔ one-design moderne (bau 42″≈1067 vs ~1130).
+3. **Faire valider** le tableau d'offsets par l'utilisateur.
+4. **Régénérer le modèle FeatureScript** : pram **développable à bouchain vif** —
+   lignes **quille/bouchain/liston** à quelques stations + **2 tableaux rakés** →
+   loft **réglé** du fond + des flancs + tableaux ; puis `opShell` (phase matériaux).
+5. **Relabeliser les faces** (fond/flancs/tableaux/pont) + resync jusqu'au commit ;
+   recalcul du vocabulaire couleur/label.
+6. **Matériaux** : assigner `Nom` + `Matériau` (densité) natifs → **Masse/Barycentre/
+   Inertie** natifs ; brancher l'hydrostatique (LCB, Cb, surface de flottaison, GM)
+   via `math/`.
+7. **Amélioration** : obtenir une **planche plus nette** (`all_draw.jpg` un peu floue).
+
+**Notes de contexte (acquis) :**
+- Canal de commande par **commentaires** : lecture/écriture/ancrage/résolution
+  validés ; mais la **requête stockée n'est pas résoluble hors app** (deux couches
+  d'id : transitoire vs recette). Poignée stable = notre **attribut** + **couleur**.
+  Labels de face **visibles** natifs = non ouverts par API (datum MBD = RPC opaque).
+  Piste retenue si besoin : **épingles posées par l'IA** (commentId→label au manifest)
+  + **réponses** de l'humain.
+
+## 9. Historique
 - 2026-08-02 : création. Données de jauge extraites du PDF IODA 2022 (pdf.js),
   recoupées avec World Sailing et Wikipedia. Offsets détaillés non publics → à
   interpréter puis valider.

@@ -52,24 +52,42 @@ _VOCAB_SCRIPT = """function(context is Context, queries is map)
         var o = pl.origin;
         var es = evaluateQuery(context, qAdjacent(faces[i], AdjacencyType.EDGE, EntityType.EDGE));
         var eids = transientQueriesToStrings(es);
-        var segs = [];
-        for (var k = 0; k < size(es); k += 1)
+        var n = size(es);
+        var ang = [];
+        var mx = [];
+        var mz = [];
+        var len = [];
+        for (var k = 0; k < n; k += 1)
         {
             var m = evEdgeTangentLine(context, { "edge" : es[k], "parameter" : 0.5 }).origin;
             var d = m - o;
-            segs = append(segs, { "id" : eids[k], "ang" : atan2(dot(d, ya), dot(d, xa)) / degree, "len" : round(evLength(context, { "entities" : es[k] }) / millimeter) });
+            ang = append(ang, atan2(dot(d, ya), dot(d, xa)));
+            mx = append(mx, m[0] / millimeter);
+            mz = append(mz, m[2] / millimeter);
+            len = append(len, round(evLength(context, { "entities" : es[k] }) / millimeter));
         }
-        var ordered = [];
-        for (var k = 0; k < size(segs); k += 1)
+        // Segment 1 = edge nearest the transom (min X, tie min Z), then clockwise.
+        var anchor = 0;
+        for (var k = 1; k < n; k += 1)
         {
-            var rank = 1;
-            for (var q = 0; q < size(segs); q += 1)
-            {
-                if (q != k && segs[q].ang > segs[k].ang) { rank += 1; }
-            }
-            ordered = append(ordered, { "seg" : rank, "id" : segs[k].id, "lenMm" : segs[k].len });
+            if (mx[k] < mx[anchor] || (mx[k] == mx[anchor] && mz[k] < mz[anchor])) { anchor = k; }
         }
-        out = append(out, { "label" : attr.label, "region" : attr.region, "faceId" : ids[i], "segments" : ordered });
+        var cw = [];
+        for (var k = 0; k < n; k += 1)
+        {
+            var p = 0;
+            for (var q = 0; q < n; q += 1)
+            {
+                if (ang[q] > ang[k]) { p += 1; }
+            }
+            cw = append(cw, p);
+        }
+        var segments = [];
+        for (var k = 0; k < n; k += 1)
+        {
+            segments = append(segments, { "seg" : ((cw[k] - cw[anchor] + n) % n) + 1, "id" : eids[k], "lenMm" : len[k] });
+        }
+        out = append(out, { "label" : attr.label, "region" : attr.region, "faceId" : ids[i], "segments" : segments });
     }
     return out;
 }"""
@@ -185,10 +203,10 @@ class PartStudioClient:
     def vocabulary(self, ps_eid: str) -> list[dict]:
         """Shared face vocabulary: each labelled face with its clockwise segments.
 
-        Returns a list of {label, region, faceId, segments:[{seg, id, lenMm}]},
-        where `label` is the stable "<letter><n>" reference (e.g. R1 = forward
-        bottom face) and `segments` are numbered clockwise. Empty until the hull
-        has been (re)synced with face labelling.
+        Returns a list of {label, region, faceId, segments:[{seg, id, lenMm}]}.
+        `label` is the stable "<letter><n>" reference (e.g. R1 = aftmost bottom
+        face, by the transom); segments are numbered from the edge nearest the
+        transom, clockwise. Empty until the hull has been (re)synced with labels.
         """
         return unwrap(self.evaluate(ps_eid, _VOCAB_SCRIPT)["result"]) or []
 

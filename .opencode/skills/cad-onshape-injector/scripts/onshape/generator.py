@@ -48,8 +48,10 @@ import(path : "onshape/std/geometry.fs", version : "3029.0");
 
 const OPTIMIST_LOA_BOUNDS = { (__UNIT__) : [__LO__, __DEFAULT__, __HI__] } as LengthBoundSpec;
 
-// Shared vocabulary: group faces by region (colour) and number them front->rear.
-// A face is referenced as "<letter><n>", e.g. R1 = forward bottom face.
+// Shared vocabulary convention (X: 0 = transom/stern, +X = bow; Y transverse; Z up):
+//   * a face is referenced as "<letter><n>", numbered from the transom forward,
+//     so R1 is the aftmost bottom face (nearest the tableau arriere).
+//   * a face's segments are numbered from the edge nearest the transom, clockwise.
 const BOAT_LABEL_ATTR = "boatLabel";
 const BOAT_PALETTE = {
         "R" : color(0.85, 0.1, 0.1),   // fond (bottom)
@@ -99,10 +101,10 @@ function labelHullFaces(context is Context, faceQuery is Query)
             {
                 continue;
             }
-            // Order front (max X) -> rear; ties broken by Y, Z then index for uniqueness.
-            if (b.cx > a.cx
-                || (b.cx == a.cx && b.cy > a.cy)
-                || (b.cx == a.cx && b.cy == a.cy && b.cz > a.cz)
+            // Order transom (min X) -> bow; ties broken by Y, Z then index for uniqueness.
+            if (b.cx < a.cx
+                || (b.cx == a.cx && b.cy < a.cy)
+                || (b.cx == a.cx && b.cy == a.cy && b.cz < a.cz)
                 || (b.cx == a.cx && b.cy == a.cy && b.cz == a.cz && j < i))
             {
                 rank += 1;

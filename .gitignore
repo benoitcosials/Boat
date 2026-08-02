@@ -78,3 +78,7 @@ node_modules/
 *.jpg
 *.jpeg
 *.gif
+
+# Keep reference plan scans under docs/
+!docs/optimist-plans-1948/*.jpg
+!docs/optimist-plans-1948/*.gif

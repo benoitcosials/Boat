@@ -46,36 +46,46 @@ pinned version.
 ## Roadmap
 
 The Onshape tooling (session-based REST injection, generator, commit) works
-end-to-end. Next steps, by priority tier:
+end-to-end. Status by tier:
 
-### Tier 1 — Loop reliability
-- **Programmatic FeatureScript error reporting.** Retrieve the compile/regen
-  *message* (file:line + failed precondition), not just `OK/ERROR`, and surface it
-  so a failed generation is caught instead of silently committing a red feature.
+### Tier 1 — Loop reliability — ✅ done
+- **Programmatic FeatureScript error reporting.** `FeatureStudioClient.compiles()`
+  catches parse/compile failure (empty featurespecs); `PartStudioClient.feature_errors()`
+  + `feature_error_enum()` catch regen errors; `feature_notice()` recovers the rich
+  *message* + `line:col` by re-running the feature through the eval endpoint (addressed
+  by its namespace). `sync_project` aborts the commit on any error.
 
-### Tier 2 — Close the loop to fabrication
+### Tier 2 — Close the loop to fabrication — ⏳ next
 - **STL export + QA gates 3–4.** Onshape translation API → STL → the existing
-  `validate_geometry.py` and `validate_printability.py`. Completes "idea → printable
-  part".
+  `validate_geometry.py` and `validate_printability.py`. Completes "idea → printable part".
 
-### Tier 3 — Two-way human ↔ AI loop
-- **Human-change diff.** Compare the current feature tree against `last_ai_version`,
-  detect native features a human added, fold them back into the generator / `.fs`.
-- **Onshape → LLM feedback.** Today the flow is one-way (LLM writes FS). Instantiating
-  a part generates sub-objects (faces, edges, vertices, bodies, bounding box, mass
-  properties). Export a *structured summary* of what was generated back to the LLM so
-  the next iteration reasons from the actual result rather than blind.
+### Tier 3 — Two-way human ↔ AI loop — ✅ mostly done
+- **Onshape → LLM feedback ✅.** `PartStudioClient.summary()` returns a *structured*
+  summary (part/face/edge/vertex counts, bounding box, volume) after each part.
+- **Shared face vocabulary ✅.** The generator colours and numbers each hull face and
+  stores a `boatLabel` attribute; `PartStudioClient.vocabulary()` reports each labelled
+  face with its clockwise-numbered segments. Numbering is anchored at the transom.
+- **Comment command-channel 🚧.** Async, geometry-anchored commands via Onshape comments:
+  read-only reader (`CommentsClient` / `list_comments.py`) done; posting anchored pins,
+  resolve/reply validated. Full act→commit loop pending. Key finding (see
+  `docs/optimiste.md`): two ID layers — transient vs persistent query — so the stable
+  handle is our attribute/colour, not the stored comment query.
+- **Human-change diff ⏳.** Compare the current tree against `last_ai_version` — not started.
 
-### Tier 4 — Richer generator
-- `opShell` (hollow to a hull thickness), expose `beam` / depth / rocker as
-  parameters, add transom and sheer — a real hull, not just a solid loft.
+### Tier 4 — Richer generator — 🚧 in progress
+- Faithful **Optimist pram**: developable hard-chine hull, 2 raked transoms, rocker;
+  `opShell` for wall thickness; expose `beam` / depth / rocker. Class-rule + original
+  1948-plan research done — see `docs/optimiste.md` + `docs/optimist-plans-1948/`.
+  Next: consolidate offsets → regenerate model.
+- **Native metadata / material.** Set `Nom` + `Matériau` (density) via the metadata API
+  → live `Masse` / `Barycentre` / `Inertie`, feeding the `math/` hydrostatics.
 
-### Tier 5 — Vision feedback (fit-to-purpose)
+### Tier 5 — Vision feedback (fit-to-purpose) — ⏳
 - Render the part from several angles, then a multimodal LLM names what it sees.
   If "make a bolt" yields images recognized as a bolt, the cycle is on track. A soft,
   semantic sanity check that complements the geometric QA gates.
 
-### Tier 6 — 3D model library as a starting point
+### Tier 6 — 3D model library as a starting point — ⏳
 - When a new part is requested, start from a library entry (e.g. Onshape Standard
   Content for fasteners, or a configurable base part) instead of generating from
   scratch — faster and more reliable for common hardware.

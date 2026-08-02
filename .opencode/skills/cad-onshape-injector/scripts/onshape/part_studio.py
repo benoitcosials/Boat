@@ -12,11 +12,67 @@ from typing import Any
 
 from .constants import BT_FEATURE, BT_PARAM_QUANTITY, PROP_APPEARANCE, PROP_NAME
 from .context import DocumentContext
+from .fsvalue import unwrap
 from .session import OnshapeSession
 
 # Dialog expressions ("2300 millimeter") -> code expressions ("2300 * millimeter").
 _UNIT_WORDS = "millimeter|centimeter|meter|kilometer|inch|foot|yard|mile|degree|radian"
 _DIALOG_UNIT_RE = re.compile(rf"([0-9.eE+\-]) +({_UNIT_WORDS})\b")
+
+# Structured geometry summary: counts + bounding box + volume, always in millimeters.
+_SUMMARY_SCRIPT = """function(context is Context, queries is map)
+{
+    var solids = qAllModifiableSolidBodies();
+    var bb = evBox3d(context, { "topology" : solids });
+    return {
+        "parts" : size(evaluateQuery(context, solids)),
+        "faces" : size(evaluateQuery(context, qEverything(EntityType.FACE))),
+        "edges" : size(evaluateQuery(context, qEverything(EntityType.EDGE))),
+        "vertices" : size(evaluateQuery(context, qEverything(EntityType.VERTEX))),
+        "length_mm" : (bb.maxCorner[0] - bb.minCorner[0]) / millimeter,
+        "width_mm" : (bb.maxCorner[1] - bb.minCorner[1]) / millimeter,
+        "height_mm" : (bb.maxCorner[2] - bb.minCorner[2]) / millimeter,
+        "volume_mm3" : evVolume(context, { "entities" : solids }) / (millimeter * millimeter * millimeter)
+    };
+}"""
+
+# Read the shared face vocabulary (label/region attribute) + clockwise-ordered segments.
+_VOCAB_SCRIPT = """function(context is Context, queries is map)
+{
+    var faces = evaluateQuery(context, qEverything(EntityType.FACE));
+    var ids = transientQueriesToStrings(faces);
+    var out = [];
+    for (var i = 0; i < size(faces); i += 1)
+    {
+        var attr = getAttribute(context, { "entity" : faces[i], "name" : "boatLabel" });
+        if (attr == undefined) { continue; }
+        var pl = evFaceTangentPlane(context, { "face" : faces[i], "parameter" : vector(0.5, 0.5) });
+        var xa = pl.x;
+        var ya = cross(pl.normal, pl.x);
+        var o = pl.origin;
+        var es = evaluateQuery(context, qAdjacent(faces[i], AdjacencyType.EDGE, EntityType.EDGE));
+        var eids = transientQueriesToStrings(es);
+        var segs = [];
+        for (var k = 0; k < size(es); k += 1)
+        {
+            var m = evEdgeTangentLine(context, { "edge" : es[k], "parameter" : 0.5 }).origin;
+            var d = m - o;
+            segs = append(segs, { "id" : eids[k], "ang" : atan2(dot(d, ya), dot(d, xa)) / degree, "len" : round(evLength(context, { "entities" : es[k] }) / millimeter) });
+        }
+        var ordered = [];
+        for (var k = 0; k < size(segs); k += 1)
+        {
+            var rank = 1;
+            for (var q = 0; q < size(segs); q += 1)
+            {
+                if (q != k && segs[q].ang > segs[k].ang) { rank += 1; }
+            }
+            ordered = append(ordered, { "seg" : rank, "id" : segs[k].id, "lenMm" : segs[k].len });
+        }
+        out = append(out, { "label" : attr.label, "region" : attr.region, "faceId" : ids[i], "segments" : ordered });
+    }
+    return out;
+}"""
 
 
 def _to_code_expr(expr: str) -> str:
@@ -116,6 +172,25 @@ class PartStudioClient:
             "notices": resp.get("notices", []),
             "console": resp.get("console", ""),
         }
+
+    def summary(self, ps_eid: str) -> dict:
+        """Structured geometry summary of the Part Studio for LLM feedback.
+
+        One eval returns counts (parts/faces/edges/vertices), bounding-box
+        dimensions and volume; lengths are in millimeters regardless of the
+        workspace unit. Foundation for describing what was actually built.
+        """
+        return unwrap(self.evaluate(ps_eid, _SUMMARY_SCRIPT)["result"])
+
+    def vocabulary(self, ps_eid: str) -> list[dict]:
+        """Shared face vocabulary: each labelled face with its clockwise segments.
+
+        Returns a list of {label, region, faceId, segments:[{seg, id, lenMm}]},
+        where `label` is the stable "<letter><n>" reference (e.g. R1 = forward
+        bottom face) and `segments` are numbered clockwise. Empty until the hull
+        has been (re)synced with face labelling.
+        """
+        return unwrap(self.evaluate(ps_eid, _VOCAB_SCRIPT)["result"]) or []
 
     def feature_notice(
         self,

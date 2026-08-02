@@ -72,6 +72,36 @@ def _report_feature_errors(
         print(f"    {detail['message']}{where}")
 
 
+def _print_summary(summary: dict) -> None:
+    """Print a compact, structured description of what was actually built."""
+    print(
+        f"    {int(summary['parts'])} part(s), {int(summary['faces'])} faces, "
+        f"{int(summary['edges'])} edges, {int(summary['vertices'])} vertices"
+    )
+    print(
+        f"    bbox {summary['length_mm']:.0f} x {summary['width_mm']:.0f} x "
+        f"{summary['height_mm']:.0f} mm, volume {summary['volume_mm3'] / 1000.0:.0f} cm3"
+    )
+
+
+# Face label initial -> colour name (French), for the shared human/AI vocabulary.
+_COLOUR_FR = {"R": "rouge", "J": "jaune", "V": "vert", "B": "bleu", "C": "cyan", "M": "magenta"}
+
+
+def _print_vocabulary(faces: list[dict]) -> None:
+    """Print each labelled face (colour/region) with its clockwise segments."""
+    if not faces:
+        return
+    print("    faces (label = region, couleur -> segments sens horaire):")
+    for face in sorted(faces, key=lambda f: f["label"]):
+        colour = _COLOUR_FR.get(face["label"][0], "?")
+        segments = ", ".join(
+            f"s{int(s['seg'])}={s['id']} {int(s['lenMm'])}mm"
+            for s in sorted(face["segments"], key=lambda s: s["seg"])
+        )
+        print(f"      {face['label']} ({face['region']}, {colour}) [{face['faceId']}]: {segments}")
+
+
 def _sync_part(
     part: dict, unit: str, studios: FeatureStudioClient, parts: PartStudioClient
 ) -> bool:
@@ -100,6 +130,8 @@ def _sync_part(
         return False
 
     print(f"  {name}: OK — FS {fs_eid} -> Part Studio {ps_eid}")
+    _print_summary(parts.summary(ps_eid))
+    _print_vocabulary(parts.vocabulary(ps_eid))
     return True
 
 

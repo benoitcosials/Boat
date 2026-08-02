@@ -57,6 +57,52 @@ def _generate_if_needed(part: dict, unit: str) -> str:
     return fs_path.read_text(encoding="utf-8")
 
 
+def _report_feature_errors(
+    parts: PartStudioClient, ps_eid: str, name: str, spec: dict, parameters: dict, fs_eid: str
+) -> None:
+    """Print the coarse status and the rich FeatureScript message for a failed part."""
+    for err in parts.feature_errors(ps_eid):
+        reason = parts.feature_error_enum(ps_eid, err["featureId"]) or err["status"]
+        print(f"  {name}: feature '{err['name']}' errored -> {reason}")
+    detail = parts.feature_notice(
+        ps_eid, spec["namespace"], spec["featureType"], parameters, fs_eid
+    )
+    if detail:
+        where = f" ({detail['location']})" if detail.get("location") else ""
+        print(f"    {detail['message']}{where}")
+
+
+def _sync_part(
+    part: dict, unit: str, studios: FeatureStudioClient, parts: PartStudioClient
+) -> bool:
+    """Sync one part to Onshape. Returns True on success, False on any error."""
+    name = part["name"]
+    fs_text = _generate_if_needed(part, unit)
+    fs_eid = studios.sync(name, fs_text)
+    part["feature_studio_eid"] = fs_eid
+
+    if not studios.compiles(fs_eid):
+        print(f"  {name}: FeatureScript did NOT compile (see FeatureScript notices)")
+        return False
+
+    spec = studios.featurespec(fs_eid)
+    ps_eid = parts.ensure(name)
+    part["part_studio_eid"] = ps_eid
+
+    already = any(f.get("featureType") == spec["featureType"] for f in parts.list_features(ps_eid))
+    if not already:
+        parts.instantiate(
+            ps_eid, spec["featureType"], spec["namespace"], f"{name} 1", part.get("parameters", {})
+        )
+
+    if parts.feature_errors(ps_eid):
+        _report_feature_errors(parts, ps_eid, name, spec, part.get("parameters", {}), fs_eid)
+        return False
+
+    print(f"  {name}: OK — FS {fs_eid} -> Part Studio {ps_eid}")
+    return True
+
+
 def main() -> None:
     manifest = load_manifest()
     onshape = manifest["onshape"]
@@ -70,27 +116,15 @@ def main() -> None:
         studios = FeatureStudioClient(session, ctx)
         parts = PartStudioClient(session, ctx)
 
-        for part in manifest.get("parts", []):
-            name = part["name"]
-            fs_text = _generate_if_needed(part, unit)
-            fs_eid = studios.sync(name, fs_text)
-            spec = studios.featurespec(fs_eid)
-            ps_eid = parts.ensure(name)
+        failed = [
+            part["name"]
+            for part in manifest.get("parts", [])
+            if not _sync_part(part, unit, studios, parts)
+        ]
 
-            already = any(
-                f.get("featureType") == spec["featureType"] for f in parts.list_features(ps_eid)
-            )
-            if not already:
-                parts.instantiate(
-                    ps_eid,
-                    spec["featureType"],
-                    spec["namespace"],
-                    f"{name} 1",
-                    part.get("parameters", {}),
-                )
-            part["feature_studio_eid"] = fs_eid
-            part["part_studio_eid"] = ps_eid
-            print(f"  {name}: FS {fs_eid} -> Part Studio {ps_eid}")
+        if failed:
+            save_manifest(manifest)
+            raise SystemExit(f"Aborting commit — errors in: {', '.join(failed)}")
 
         stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
         version = VersionsClient(session, ctx).commit(

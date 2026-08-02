@@ -74,5 +74,14 @@ class FeatureStudioClient:
             "parameters": [p.get("parameterId") for p in spec.get("parameters", [])],
         }
 
+    def compiles(self, eid: str) -> bool:
+        """True if the Feature Studio compiles and exports at least one feature.
+
+        An empty feature-spec list after a sync means the FeatureScript failed to
+        compile (syntax/semantic error).
+        """
+        response = self.s.get(f"{self._base()}/e/{eid}/featurespecs")
+        return bool(response.get("featureSpecs"))
+
     def delete(self, eid: str) -> Any:
         return self.s.delete(f"/elements{self.ctx.dw}/e/{eid}")

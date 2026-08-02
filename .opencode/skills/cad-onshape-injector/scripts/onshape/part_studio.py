@@ -7,11 +7,20 @@ resulting part so both the human and the AI refer to it the same way.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .constants import BT_FEATURE, BT_PARAM_QUANTITY, PROP_APPEARANCE, PROP_NAME
 from .context import DocumentContext
 from .session import OnshapeSession
+
+# Dialog expressions ("2300 millimeter") -> code expressions ("2300 * millimeter").
+_UNIT_WORDS = "millimeter|centimeter|meter|kilometer|inch|foot|yard|mile|degree|radian"
+_DIALOG_UNIT_RE = re.compile(rf"([0-9.eE+\-]) +({_UNIT_WORDS})\b")
+
+
+def _to_code_expr(expr: str) -> str:
+    return _DIALOG_UNIT_RE.sub(r"\1 * \2", expr)
 
 
 class PartStudioClient:
@@ -69,6 +78,89 @@ class PartStudioClient:
 
     def list_features(self, ps_eid: str) -> list[dict]:
         return self.s.get(f"{self._base()}/e/{ps_eid}/features").get("features", [])
+
+    def feature_errors(self, ps_eid: str) -> list[dict]:
+        """Features whose regen status is not OK, as {featureId, name, status}."""
+        data = self.s.get(f"{self._base()}/e/{ps_eid}/features")
+        names = {f.get("featureId"): f.get("name") for f in data.get("features", [])}
+        return [
+            {"featureId": fid, "name": names.get(fid), "status": state.get("featureStatus")}
+            for fid, state in data.get("featureStates", {}).items()
+            if state.get("featureStatus") not in (None, "OK")
+        ]
+
+    def feature_error_enum(self, ps_eid: str, feature_id: str) -> str | None:
+        """Coarse error category for a feature (e.g. "REGEN_ERROR"), via FeatureScript eval."""
+        script = (
+            "function(context is Context, queries is map)"
+            f' {{ return getFeatureError(context, makeId("{feature_id}")); }}'
+        )
+        resp = self.s.post(
+            f"{self._base()}/e/{ps_eid}/featurescript", {"script": script, "queries": {}}
+        )
+        return (resp.get("result") or {}).get("value")
+
+    def evaluate(self, ps_eid: str, script: str, queries: dict | None = None) -> dict:
+        """Run a FeatureScript snippet in this Part Studio's context.
+
+        `script` must be a `function(context is Context, queries is map){...}`
+        expression. Returns {result, notices, console}; `notices` carries the
+        rich message + line/column for any FeatureScript error the script hits.
+        """
+        resp = self.s.post(
+            f"{self._base()}/e/{ps_eid}/featurescript",
+            {"script": script, "queries": queries or {}},
+        )
+        return {
+            "result": resp.get("result"),
+            "notices": resp.get("notices", []),
+            "console": resp.get("console", ""),
+        }
+
+    def feature_notice(
+        self,
+        ps_eid: str,
+        namespace: str,
+        feature_type: str,
+        parameters: dict[str, str] | None = None,
+        fs_eid: str | None = None,
+    ) -> dict | None:
+        """Rich FeatureScript error for a feature, recovered via eval.
+
+        Re-runs `namespace::feature_type(...)` in an isolated eval (non-persistent)
+        so the FeatureScript exception surfaces as a notice with the exact message
+        and source location. `featureStates` only reports a coarse ERROR status;
+        this recovers the message and the `line:col` inside the Feature Studio.
+        Returns {message, location} or None if the feature evaluates cleanly.
+        """
+        param_src = ", ".join(
+            f'"{pid}" : {_to_code_expr(expr)}' for pid, expr in (parameters or {}).items()
+        )
+        script = (
+            "function(context is Context, queries is map)\n"
+            "{\n"
+            f'    {namespace}::{feature_type}(context, makeId("__probe__"), {{ {param_src} }});\n'
+            "    return 1;\n"
+            "}"
+        )
+        result = self.evaluate(ps_eid, script)
+        return self._pick_notice(result["notices"], fs_eid)
+
+    @staticmethod
+    def _pick_notice(notices: list[dict], fs_eid: str | None) -> dict | None:
+        """Prefer the notice located in the Feature Studio source; else first error."""
+        fallback = None
+        for notice in notices:
+            message = notice.get("message")
+            if not message:
+                continue
+            for frame in notice.get("stackTrace", []):
+                if fs_eid and frame.get("document") == fs_eid:
+                    location = f"line {frame.get('line')}, col {frame.get('column')}"
+                    return {"message": message, "location": location}
+            if fallback is None and notice.get("level") == "ERROR":
+                fallback = {"message": message, "location": None}
+        return fallback
 
     # ── parts + shared vocabulary (colour / name) ────────────────────────
     def list_parts(self, ps_eid: str) -> list[dict]:

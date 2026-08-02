@@ -39,9 +39,8 @@ The params.json format expected by this validator:
 """
 
 import json
-import sys
 import math
-from pathlib import Path
+import sys
 from typing import NoReturn
 
 

@@ -35,7 +35,6 @@ The spec.json format expected by this validator:
 
 import json
 import sys
-from pathlib import Path
 from typing import NoReturn
 
 # Recognized materials with minimum wall thickness (mm) for FDM 3D printing

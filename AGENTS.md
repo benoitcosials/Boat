@@ -30,7 +30,7 @@ Boat/
 │   │   ├── cad-requirements/ # Phase 1 : Interview → spec.json
 │   │   ├── cad-naval-math/   # Phase 2 : JAX → params.json
 │   │   ├── cad-featurescript-gen/ # Phase 3 : FeatureScript Onshape
-│   │   ├── cad-onshape-injector/ # Phase 4 : Playwright → Onshape
+│   │   ├── cad-onshape-injector/ # Phase 4 : injection REST (session) → Onshape
 │   │   └── cad-qa/           # Phase 5 : Validation STL + printabilité
 │   └── archive/              # Ancien pipeline FreeCAD (historique)
 │
@@ -70,7 +70,7 @@ Boat/
 | `cad-requirements` | 1 | Description utilisateur | `spec.json` | Interview structurée |
 | `cad-naval-math` | 2 | `spec.json` | `params.json` | JAX Metal GPU |
 | `cad-featurescript-gen` | 3 | `params.json` | `parts/*.fs` | Génération de code |
-| `cad-onshape-injector` | 4 | `output.fs` + URL Onshape | Screenshot + pièce CAO | Playwright + Chromium |
+| `cad-onshape-injector` | 4 | `manifest.json` + `parts/*.fs` | Pièce CAO + commit `[AI]` | Session REST (Playwright porte la session) |
 | `cad-qa` | 5 | `spec.json`, `params.json`, STL | Rapport de gate | 4 scripts Python |
 
 ### QA Gates
@@ -93,35 +93,34 @@ Boat/
   - `trimesh>=4.0` → validation géométrique STL
 
 ### Authentification Onshape
-- `.env` contient `ONSHAPE_EMAIL` et `ONSHAPE_PASSWORD`
-- `cad-onshape-injector` utilise ces credentials pour le login automatique Playwright
-- Session persistante dans `.browser-data/` (gitignoré)
+- **Login manuel une fois** dans la fenêtre Playwright ; la session est ensuite persistée dans `.browser-data/` (gitignoré).
+- Écritures API : cookie de session **+** en-tête `X-XSRF-TOKEN` (valeur du cookie `XSRF-TOKEN`). Ces appels sont **hors quota** (pas de clé API).
+- Aucun secret ne transite par le LLM ; l'utilisateur saisit son mot de passe directement.
 
-## Stratégie de Branches Onshape
+## Versionnement Onshape (commits)
 
-Onshape est utilisé comme un dépôt Git :
-- **`main`** — branche de l'humain (ajouts manuels en features natives)
-- **`ai/main`** — branche de l'IA (FeatureScript injecté uniquement)
+Onshape n'a pas de git — un **commit est une Version** (snapshot immuable nommé).
 
 ### Règles
 | Règle | Détail |
 |-------|--------|
-| IA n'écrit jamais dans `main` | Toujours `ai/main`, puis merge explicite |
-| Humain n'écrit jamais dans `ai/main` | Modifs manuelles dans `main` ou branches personnelles |
-| Un `.fs` = un Part Studio | `parts/hull.fs` → Part Studio "Hull" → géré par l'IA |
-| Part Studios sans `.fs` | Ignorés par l'IA (domaine humain exclusif) |
+| Commit à chaque run | Chaque invocation de script crée une Version `[AI] …` ; l'id va dans `manifest.last_ai_version` |
+| Auteur encodé dans le nom | L'API agit sous l'identité connectée → `[AI]` (script) vs `[HUMAN]` (édition manuelle) |
+| Un `.fs` = un Feature Studio + un Part Studio | `parts/hull.fs` → Feature Studio + Part Studio "Hull" |
+| Part Studios hors manifeste | Domaine humain exclusif — jamais touchés par l'IA |
+| Le LLM ne lance jamais git | L'historique git de `parts/*.fs` est piloté par le prompt/pipeline |
 
 ### Workflow IA
 ```
-JAX → parts/hull.fs → inject dans ai/main → merge → main
+manifest.json → générateur → parts/hull.fs → sync (Feature Studio + Part Studio) → commit [AI]
 ```
 
 ### Workflow intégration manuelle
 ```
-1. Humain crée branche "benoit/modifs" depuis main
-2. @cad "Analyse benoit/modifs"
-3. L'agent lit le diff, met à jour parts/*.fs
-4. L'agent injecte dans ai/main, merge → main
+1. L'humain modifie une pièce dans Onshape (Version [HUMAN])
+2. @cad diffe l'état courant contre last_ai_version
+3. L'agent réintègre les changements dans le générateur / parts/*.fs
+4. sync_project.py → commit [AI]
 ```
 
 ## Workflow de Conception
@@ -138,9 +137,9 @@ Phase 5: cad-qa              → STL validé   ── Gates 3+4
 
 ## Contraintes Techniques
 
-- **Pas de GUI locale** — l'agent opère en SSH. Onshape est piloté via Playwright headless.
-- **Conversion d'unités** — JAX travaille en mètres, FeatureScript en millimètres. Conversion : `× 1000 → * millimeter`.
-- **FeatureScript, pas de clics 3D** — le canvas WebGL d'Onshape est inaccessible à Playwright. Tout passe par injection de code dans l'éditeur FeatureScript.
+- **Pas de GUI locale** — l'agent opère en SSH. Onshape est piloté par **appels REST** via une session navigateur (Playwright porte la session, headless possible).
+- **Unités** — lire et **respecter le workspace unit** du document ; générer de façon agnostique (fractions × `definition.<len>`). Code FeatureScript : `n * unit` ; expressions de dialogue : `n unit` (sans `*`).
+- **Pas de clics 3D ni d'éditeur UI** — tout passe par des appels REST : contenu de Feature Studio, instanciation dans le Part Studio, métadonnées (couleur/nom), Versions (commits).
 - **FeatureScript = blueprint persistant** — les fichiers `.fs` dans `parts/` sont la définition canonique de la pièce, lisibles par le LLM et l'humain, versionnés dans git.
 - **Gate 3 : max 3 retries** — après 3 échecs de validation géométrique, escalader à l'utilisateur.
 

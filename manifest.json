@@ -1,0 +1,19 @@
+{
+  "project": "boat",
+  "onshape": {
+    "document_url": "https://cad.onshape.com/documents/72d669d8438812c7203c2dd6/w/9a90c1b416cfe3dc10418c3f",
+    "did": "72d669d8438812c7203c2dd6",
+    "wid": "9a90c1b416cfe3dc10418c3f",
+    "workspace_unit": "millimeter"
+  },
+  "parts": [
+    {
+      "name": "Hull",
+      "fs": "parts/hull.fs",
+      "generator": "optimist_hull",
+      "loa_bounds": [500, 2300, 6000],
+      "feature": "optimistHull",
+      "parameters": { "loa": "2300 millimeter" }
+    }
+  ]
+}

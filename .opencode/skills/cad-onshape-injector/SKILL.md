@@ -1,182 +1,133 @@
 ---
 name: cad-onshape-injector
-description: "Manages the Onshape CAD workspace via Playwright browser automation: branch-based FeatureScript injection (ai/main), Part Studio mapping from parts/ manifest, merge ai/main→main with user approval, and branch diff analysis for human modifications. Use after cad-featurescript-gen produces the FeatureScript. Triggered by: inject into Onshape, Playwright Onshape, FeatureScript injection, CAD automation, Onshape browser control, merge branch, analyze branch."
+description: "Injects FeatureScript into Onshape via session-authenticated REST calls (browser cookies + X-XSRF-TOKEN, no API keys, off-quota). Manifest-driven: manifest.json maps parts to Feature Studios / Part Studios and holds the workspace unit. Generates FeatureScript, syncs it, instantiates rendered geometry, and commits an Onshape Version at the end of every run. Triggered by: inject into Onshape, FeatureScript injection, sync project, commit version, Onshape automation, generate hull."
 ---
 
-## Quick Start
+## Method — why this works
 
-1. **Ensure Chromium is installed**: `playwright install chromium`
-2. **The `parts/` manifest determines what gets injected** — each `.fs` file maps to one Part Studio.
-3. **Injection always targets `ai/main` branch, never `main`**:
-   ```bash
-   .venv/bin/python3 scripts/inject_featurescript_onshape.py inject \
-     --document "https://cad.onshape.com/documents/..." \
-     --featurescript parts/hull.fs
-   ```
-4. **After injection, merge to `main` with user approval**:
-   ```bash
-   .venv/bin/python3 scripts/inject_featurescript_onshape.py merge \
-     --document "https://cad.onshape.com/documents/..." \
-     --branch ai/main
-   ```
-5. **Analyze human modifications on a branch**:
-   ```bash
-   .venv/bin/python3 scripts/inject_featurescript_onshape.py analyze \
-     --document "https://cad.onshape.com/documents/..." \
-     --base ai/main --target benoit/modifications
-   ```
+Onshape is a single-page app that talks to its own REST backend. We piggyback on
+that: **Playwright only carries an authenticated browser session** (persisted in
+`.browser-data/`); every CAD operation is a plain HTTP call to Onshape's API, not
+a UI click.
 
-## Architecture
+- **Reads** need only the session cookie.
+- **Writes** need the cookie **plus** the `X-XSRF-TOKEN` header (value of the
+  JS-readable `XSRF-TOKEN` cookie). Without it, writes return `401`.
+- These count as **browser-session** calls, so they are **NOT** charged against
+  the Free-plan annual API-key quota (2,500/yr). Iterations are effectively
+  unlimited. **Do not use API keys** for this reason.
 
-### Branch Strategy
+## Layout
 
 ```
-Onshape Document
-├── main                    ← humain (ajouts manuels en features natives)
-└── ai/main                 ← IA (FeatureScript injecté uniquement)
+scripts/
+├── onshape/                # the client package
+│   ├── session.py          OnshapeSession — Playwright session + cookie + XSRF
+│   ├── context.py          DocumentContext.from_url(url) -> did/wid/base_url
+│   ├── feature_studio.py   FeatureStudioClient.sync(name, fs_text)   [1 .fs = 1 FS]
+│   ├── part_studio.py      instantiate() · set_appearance() · rename_part()
+│   ├── versions.py         VersionsClient.commit(name, desc)          [= a commit]
+│   ├── units.py            get_length_unit(session, ctx)              [workspace unit]
+│   ├── generator.py        generate_optimist_hull(unit, loa_bounds)   [FS emitter]
+│   └── manifest.py         load_manifest() / save_manifest()
+├── sync_project.py         MAIN entrypoint — manifest sync + commit
+└── demo_inject.py          single-.fs test harness + commit
 ```
 
-- **IA n'écrit jamais dans `main`** — toujours `ai/main`, puis merge explicite.
-- **Humain n'écrit jamais dans `ai/main`** — les modifs manuelles sont dans `main` ou des branches.
-- **Merge `ai/main` → `main`** après approbation utilisateur.
+## Manifest — the master config
 
-### Part Studio Manifest
+`manifest.json` at the repo root is the single source of truth:
 
-La présence de fichiers `.fs` dans `parts/` **est** le manifeste :
-
-```
-parts/hull.fs     → Part Studio "Hull"     → géré par l'IA
-parts/rudder.fs   → Part Studio "Rudder"   → géré par l'IA
-(pas de deck.fs)  → Part Studio "Deck"     → ignoré par l'IA
-```
-
-L'IA ne touche qu'aux Part Studios qui ont un `.fs` correspondant dans `parts/`.
-
-### Workflow Complet
-
-```
-CYCLE NORMAL :
-  cad-featurescript-gen → parts/hull.fs
-  inject → ai/main (Part Studio "Hull")
-  merge → ai/main → main (après approbation)
-  L'humain voit la mise à jour dans main
-
-AJOUT MANUEL (humain dans main) :
-  Humain ajoute un taquet dans le Part Studio "Hull" sur main
-
-INTÉGRATION (humain → FS) :
-  Humain crée branche "benoit/cleats" depuis main
-  @cad analyse benoit/cleats
-  L'agent lit le diff des features
-  L'agent met à jour parts/hull.fs
-  L'agent injecte dans ai/main
-  L'agent merge ai/main → main
+```jsonc
+{
+  "project": "boat",
+  "onshape": { "document_url": "...", "did": "...", "wid": "...", "workspace_unit": "millimeter" },
+  "parts": [
+    { "name": "Hull", "fs": "parts/hull.fs", "generator": "optimist_hull",
+      "loa_bounds": [500, 2300, 6000], "feature": "optimistHull",
+      "parameters": { "loa": "2300 millimeter" } }
+  ],
+  "last_ai_version": "<version id>"
+}
 ```
 
-## Rules
+- **1 part = 1 Feature Studio (code) + 1 Part Studio (rendered geometry)**, same name.
+- A part with a `generator` key is regenerated on disk each run; otherwise
+  `parts/<name>.fs` is read as-is.
+- The document URL is not a CLI argument — it lives here.
 
-- **Never `main` directly** — all IA injections go to `ai/main`.
-- **Never draw with mouse clicks** — Onshape uses WebGL canvas; Playwright cannot interact with 3D viewport.
-- **Always use FeatureScript injection** — navigate to the FeatureScript editor and paste text.
-- **Wait for compilation** — FeatureScript compiles asynchronously; wait for the green checkmark.
-- **One `.fs` = one Part Studio** — the filename (without extension) matches the Part Studio name.
-- **Capture screenshots** — after every injection and merge, for visual confirmation.
-- **Merge requires approval** — show the user what changed before merging `ai/main` → `main`.
-- **Use persistent browser context** — saves login state between sessions (`.browser-data/`).
+## Units
+
+- **Read** the document's workspace length unit (`get_length_unit`) and respect it;
+  never hardcode meters.
+- Two length syntaxes, do not confuse them:
+  - **FeatureScript source** requires the star: `2300 * millimeter`.
+  - **Dialog / parameter expressions** take no star: `2300 millimeter`.
+- **Preferred**: write generators unit-agnostically — express dimensions as
+  fractions of a driving length and multiply by `definition.<len>` (which carries
+  units). Then only the bounds line names a unit; the body has no unit tokens.
+
+## Commit — an Onshape Version
+
+Onshape has no git; a **commit is a Version** (an immutable, named snapshot):
+`POST /api/v10/documents/d/{did}/versions`.
+
+- **Every script invocation ends with a commit** tagged `[AI] ...`; its id is
+  written to `manifest.last_ai_version`.
+- Human-authored snapshots use `[HUMAN] ...`. Human changes are detected by
+  diffing the current workspace against `last_ai_version`.
+- The API acts as the logged-in user, so authorship lives in the version name.
+
+## Geometry & the shared vocabulary
+
+- A Feature Studio only **defines** features — it renders nothing. Instantiate the
+  custom feature into a **Part Studio** to produce a solid (`instantiate()`).
+- Mark the part being discussed with **colour** (`set_appearance`) and a **name**
+  (`rename_part`); both are visible to the human in the Parts panel.
+- PNG decals/textures are Render Studio (paid) — unavailable on Free.
 
 ## Commands
 
-### `inject` — Inject FeatureScript into a Part Studio on ai/main
+### `sync_project.py` — full project sync (main entrypoint)
 
 ```bash
-.venv/bin/python3 scripts/inject_featurescript_onshape.py inject \
-  --document "https://cad.onshape.com/documents/<id>/w/<wid>" \
-  --featurescript parts/hull.fs \
-  [--screenshot result.png] \
-  [--headless]
+.venv/Scripts/python .opencode/skills/cad-onshape-injector/scripts/sync_project.py
 ```
 
-What it does:
-1. Opens the Onshape document
-2. Switches to (or creates) branch `ai/main`
-3. Finds or creates the Part Studio matching the `.fs` filename
-4. Creates or updates the FeatureScript feature with the code
-5. Waits for compilation
-6. Captures screenshot for verification
+Reads `manifest.json`, records the workspace unit, and for each part: regenerates
+its `.fs` (if it has a `generator`), syncs it into a Feature Studio, ensures a
+Part Studio, instantiates the feature if absent — then **commits** an `[AI]`
+Version and writes `last_ai_version` back to the manifest.
 
-### `merge` — Merge ai/main → main
+### `demo_inject.py` — single-part test
 
 ```bash
-.venv/bin/python3 scripts/inject_featurescript_onshape.py merge \
-  --document "https://cad.onshape.com/documents/<id>/w/<wid>" \
-  --branch ai/main \
-  [--approve]
+.venv/Scripts/python .opencode/skills/cad-onshape-injector/scripts/demo_inject.py \
+  "<document_url>" parts/hull.fs --param loa="2400 millimeter" --color 173,216,230
 ```
 
-What it does:
-1. Shows a diff summary of what changed in `ai/main` vs `main`
-2. Asks for user confirmation (unless `--approve` is set)
-3. Performs the merge
-4. Captures screenshot of the result
+Syncs one `.fs`, instantiates it, colours/renames the part, screenshots, and
+commits. First run opens a browser for a one-time manual login (then persisted).
 
-### `analyze` — Analyze feature differences between branches
+## Rules
 
-```bash
-.venv/bin/python3 scripts/inject_featurescript_onshape.py analyze \
-  --document "https://cad.onshape.com/documents/<id>/w/<wid>" \
-  --base ai/main \
-  --target benoit/modifications \
-  [--part Hull]
-```
-
-What it does:
-1. Opens both branches
-2. Compares the feature tree of specified Part Studios (or all AI-managed ones)
-3. Lists added, modified, and removed features
-4. Outputs a structured diff report the agent can use to update FeatureScript
-
-### `list-parts` — Show Part Studio mapping
-
-```bash
-.venv/bin/python3 scripts/inject_featurescript_onshape.py list-parts
-```
-
-What it does:
-1. Reads all `.fs` files from `parts/`
-2. Shows the mapping: `hull.fs → Part Studio "Hull"`
-
-## Examples
-
-### Example 1: Full cycle for a hull update
-```bash
-# 1. cad-featurescript-gen produces parts/hull.fs
-# 2. Inject into ai/main
-.venv/bin/python3 scripts/inject_featurescript_onshape.py inject \
-  --document "https://cad.onshape.com/documents/abc123/w/def456" \
-  --featurescript parts/hull.fs
-
-# 3. Review the screenshot
-# 4. Merge to main (user approves)
-.venv/bin/python3 scripts/inject_featurescript_onshape.py merge \
-  --document "https://cad.onshape.com/documents/abc123/w/def456" \
-  --branch ai/main
-```
-
-### Example 2: Analyze human modifications
-```bash
-# User added a cleat in Part Studio "Hull" on branch benoit/cleats
-.venv/bin/python3 scripts/inject_featurescript_onshape.py analyze \
-  --document "https://cad.onshape.com/documents/abc123/w/def456" \
-  --base ai/main \
-  --target benoit/cleats \
-  --part Hull
-```
+- **REST via the session, never UI clicks** on the WebGL canvas or the Monaco editor.
+- **Never use API keys** — session calls stay off the annual quota.
+- **Read + respect `workspace_unit`** — never hardcode `* meter`.
+- **FS source uses `n * unit`; dialog/param expressions use `n unit`** (no star).
+- **1 `.fs` = 1 Feature Studio = 1 Part Studio** (same name). Only manage parts
+  listed in the manifest; Part Studios without a manifest entry are human-owned.
+- **End every run with a commit**; record `last_ai_version`.
+- **Never edit generated `parts/*.fs` by hand** — change the generator or manifest.
+- **The LLM never runs raw git** — the git history of `parts/*.fs` is
+  prompt/pipeline-owned.
 
 ## Anti-Patterns
 
-- ❌ Injecting into `main` directly — always use `ai/main`.
-- ❌ Trying to click on the 3D viewport canvas — it's a WebGL surface.
-- ❌ Assuming FeatureScript compiled — always check the status badge.
-- ❌ Merging without user approval — show the diff first.
-- ❌ Modifying Part Studios that have no `.fs` in `parts/` — let the human own those.
-- ❌ Ignoring error messages in the FeatureScript editor.
+- ❌ Using API keys (charged against 2,500/yr) — use the browser session.
+- ❌ Clicking the 3D canvas or driving the FeatureScript editor through the UI.
+- ❌ Hardcoding `* meter` — read and respect `workspace_unit`.
+- ❌ Putting a `*` in dialog/parameter expressions (`2.4 * meter` shows ugly).
+- ❌ Hand-editing a generated `parts/*.fs` — it will be overwritten.
+- ❌ Forgetting the end-of-run commit.
+- ❌ Thinking in Onshape "branches" or git — use Versions.

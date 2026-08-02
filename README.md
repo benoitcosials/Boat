@@ -42,3 +42,40 @@ pinned version.
 | QA | trimesh (Python) | STL validation — manifold, watertight, printability |
 | Browser automation | Playwright + Chromium | Onshape web interface automation |
 | Python isolation | venv + direnv | Per-project Python 3.12 environment |
+
+## Roadmap
+
+The Onshape tooling (session-based REST injection, generator, commit) works
+end-to-end. Next steps, by priority tier:
+
+### Tier 1 — Loop reliability
+- **Programmatic FeatureScript error reporting.** Retrieve the compile/regen
+  *message* (file:line + failed precondition), not just `OK/ERROR`, and surface it
+  so a failed generation is caught instead of silently committing a red feature.
+
+### Tier 2 — Close the loop to fabrication
+- **STL export + QA gates 3–4.** Onshape translation API → STL → the existing
+  `validate_geometry.py` and `validate_printability.py`. Completes "idea → printable
+  part".
+
+### Tier 3 — Two-way human ↔ AI loop
+- **Human-change diff.** Compare the current feature tree against `last_ai_version`,
+  detect native features a human added, fold them back into the generator / `.fs`.
+- **Onshape → LLM feedback.** Today the flow is one-way (LLM writes FS). Instantiating
+  a part generates sub-objects (faces, edges, vertices, bodies, bounding box, mass
+  properties). Export a *structured summary* of what was generated back to the LLM so
+  the next iteration reasons from the actual result rather than blind.
+
+### Tier 4 — Richer generator
+- `opShell` (hollow to a hull thickness), expose `beam` / depth / rocker as
+  parameters, add transom and sheer — a real hull, not just a solid loft.
+
+### Tier 5 — Vision feedback (fit-to-purpose)
+- Render the part from several angles, then a multimodal LLM names what it sees.
+  If "make a bolt" yields images recognized as a bolt, the cycle is on track. A soft,
+  semantic sanity check that complements the geometric QA gates.
+
+### Tier 6 — 3D model library as a starting point
+- When a new part is requested, start from a library entry (e.g. Onshape Standard
+  Content for fasteners, or a configurable base part) instead of generating from
+  scratch — faster and more reliable for common hardware.

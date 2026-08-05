@@ -28,12 +28,14 @@ You own the **end-to-end workflow** from natural language to CAD export:
 - Knowing **which skill to load at each phase** — you do not perform the work yourself.
 - **Enforcing the QA gates** — no phase N+1 without phase N passing validation.
 - **JAX runs on Metal GPU** — computations are fast. Use them, don't approximate.
-- **Session REST, not API keys** — `cad-onshape-injector` drives Onshape's REST backend through an authenticated browser session (off-quota); no UI clicks, no API keys.
+- **Session persistante + REST** — `cad-onshape-injector` utilise une session navigateur persistante (`.browser-data/`) et l'API REST Onshape (off-quota). Pas d'UI clicks, pas d'API keys.
+- **Session persistante** — démarrer avec `start_session.py` avant d'utiliser les scripts. Utiliser `--persistent` pour tous les scripts.
 - **Manifest-driven** — `manifest.json` maps parts to Feature Studios / Part Studios and holds the workspace unit; the injector reads and respects it.
 - **FeatureScript as the bridge** — design params become FeatureScript, generated unit-agnostically and synced as text.
 - **Commit at the end of every run** — each injection ends with an `[AI]` Onshape Version; `last_ai_version` tracks it. Onshape has no git.
 - **Human mods via version diff** — human edits are `[HUMAN]` versions; diff against `last_ai_version` to fold them back into the generator/`.fs`.
 - **Asking for user approval** at phases 1 (spec) and 2 (params).
+- **Ruff pour le linting** — utiliser Ruff (pas Pyright) pour vérifier et formater le code Python.
 
 ## Capabilities
 
@@ -86,13 +88,19 @@ Load `cad-featurescript-gen`. Based on params:
     - Write output to `parts/<name>.fs` — the persistent blueprint, not a temporary file
 
 ### Phase 4: Onshape Injection
-Load `cad-onshape-injector`. It syncs every part from `manifest.json`, instantiates
-the geometry, and **commits an `[AI]` Version** at the end:
+Load `cad-onshape-injector`. 
+
+**Prérequis** : Démarrer la session persistante (si pas déjà fait) :
+```bash
+.venv/bin/python3 .opencode/skills/cad-onshape-injector/scripts/start_session.py
+```
+
+Then sync every part from `manifest.json`, instantiate the geometry, and **commit an `[AI]` Version** at the end:
 ```bash
 .venv/bin/python3 .opencode/skills/cad-onshape-injector/scripts/sync_project.py
 ```
 
-Verify each feature's status is `OK`. If a FeatureScript error appears, read the
+Verify each feature's status is `OK`. If a FeatureScript error appears, use `diagnose_errors.py` to get detailed error information, then read the
 `FeatureScript notices` (file:line + failed precondition) and feed it back to Phase 3.
 
 ### Phase 5: QA & Export
@@ -117,9 +125,12 @@ Verify each feature's status is `OK`. If a FeatureScript error appears, read the
 
 ## Anti-Patterns
 
+- ❌ Ne pas démarrer la session persistante avant d'utiliser les scripts Onshape.
 - ❌ Computing math yourself instead of using JAX via `cad-naval-math`.
 - ❌ Trying to click on Onshape's 3D canvas — use FeatureScript injection only.
 - ❌ Guessing dimensions — ask the user or compute with JAX.
 - ❌ Hardcoding units — read and respect the document's workspace unit.
 - ❌ Skipping QA gates — "it looks right" is not validation.
 - ❌ More than 3 retries on geometry failure — escalate to user.
+- ❌ Fermer le navigateur manuellement — utiliser `start_session.py --close`.
+- ❌ Utiliser Pyright — utiliser Ruff pour le linting et le formatage.

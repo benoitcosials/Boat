@@ -11,9 +11,17 @@
       "name": "Hull",
       "fs": "parts/hull.fs",
       "generator": "optimist_hull",
-      "loa_bounds": [500, 2300, 6000],
+      "loa_bounds": [
+        500,
+        2300,
+        6000
+      ],
       "feature": "optimistHull",
-      "parameters": { "loa": "2300 millimeter" }
+      "parameters": {
+        "loa": "2300 millimeter"
+      },
+      "feature_studio_eid": "9b1b4acabac61a9106939abd",
+      "part_studio_eid": "91f54d1c620906757545a08d"
     }
   ]
 }

@@ -13,7 +13,10 @@ Every invocation ends with a commit, so each operation is traceable.
 
 Run from the repo root:
   .venv/Scripts/python .opencode/skills/cad-onshape-injector/scripts/sync_project.py
-The first run opens a browser for a one-time manual login (persisted afterwards).
+
+By default, this script launches its own browser session. To use a persistent
+session started by start_session.py:
+  .venv/Scripts/python .opencode/skills/cad-onshape-injector/scripts/sync_project.py --persistent
 """
 
 from __future__ import annotations
@@ -140,31 +143,37 @@ def main() -> None:
     onshape = manifest["onshape"]
     ctx = DocumentContext.from_url(onshape["document_url"])
 
+    print("🔗 Connecting to Onshape (using saved cookies from .browser-data/)...")
     with OnshapeSession(base_url=ctx.base_url) as session:
-        unit = get_length_unit(session, ctx)
-        onshape["workspace_unit"] = unit
-        print(f"Workspace unit: {unit}")
+        _do_sync(session, ctx, manifest, onshape)
 
-        studios = FeatureStudioClient(session, ctx)
-        parts = PartStudioClient(session, ctx)
 
-        failed = [
-            part["name"]
-            for part in manifest.get("parts", [])
-            if not _sync_part(part, unit, studios, parts)
-        ]
+def _do_sync(session, ctx, manifest, onshape):
+    """Perform the actual sync operation."""
+    unit = get_length_unit(session, ctx)
+    onshape["workspace_unit"] = unit
+    print(f"Workspace unit: {unit}")
 
-        if failed:
-            save_manifest(manifest)
-            raise SystemExit(f"Aborting commit — errors in: {', '.join(failed)}")
+    studios = FeatureStudioClient(session, ctx)
+    parts = PartStudioClient(session, ctx)
 
-        stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-        version = VersionsClient(session, ctx).commit(
-            f"[AI] sync {stamp}", "Automated sync from manifest.json"
-        )
-        manifest["last_ai_version"] = version["id"]
+    failed = [
+        part["name"]
+        for part in manifest.get("parts", [])
+        if not _sync_part(part, unit, studios, parts)
+    ]
+
+    if failed:
         save_manifest(manifest)
-        print(f"Committed version {version['id']} — {version['name']}")
+        raise SystemExit(f"Aborting commit — errors in: {', '.join(failed)}")
+
+    stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    version = VersionsClient(session, ctx).commit(
+        f"[AI] sync {stamp}", "Automated sync from manifest.json"
+    )
+    manifest["last_ai_version"] = version["id"]
+    save_manifest(manifest)
+    print(f"Committed version {version['id']} — {version['name']}")
 
 
 if __name__ == "__main__":

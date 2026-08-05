@@ -1,10 +1,11 @@
-"""CommentsClient — read Onshape comments as a geometry-anchored command channel.
+"""CommentsClient — geometry-anchored command channel via Onshape comments.
 
 A comment is pinned to one entity; its `elementQuery` carries which. The query
 is either readable or a zlib-compressed blob — we decode both to readable tokens
 and classify the target (edge with section/segment, loft face, or whole part).
-We never evaluate the stored query live: its `id` anchor does not resolve outside
-a feature and it can go stale on regeneration. This module is READ-ONLY.
+
+This module supports both reading (list, open, decode) and writing (post, reply,
+resolve) of comments, enabling async human↔AI discussion anchored to geometry.
 """
 
 from __future__ import annotations
@@ -105,3 +106,53 @@ class CommentsClient:
             for comment in self.list()
             if comment.get("state") == 0
         ]
+
+    def post(
+        self,
+        message: str,
+        element_id: str,
+        element_query: str | None = None,
+    ) -> dict:
+        """Create a new comment, anchored to a geometry entity.
+
+        `element_id` is the Part Studio / Feature Studio eid (required by Onshape API).
+        `element_query` is the Onshape query string identifying the specific entity
+        (face, edge, etc.) within the element. If None, the comment is anchored to
+        the element as a whole. Returns the created comment as a dict.
+        """
+        body: dict = {
+            "message": message,
+            "objectId": self.ctx.did,  # Document ID
+            "objectType": 6,  # Comment on element
+            "elementId": element_id,
+            "workspaceId": self.ctx.wid,  # Workspace ID (required when elementQuery is present)
+        }
+        if element_query:
+            body["elementQuery"] = element_query
+        return self.s.post(f"/comments?did={self.ctx.did}", body)
+
+    def resolve(self, comment_id: str) -> dict:
+        """Mark a comment as resolved. Returns the updated comment."""
+        return self.s.post(f"/comments/{comment_id}/resolve", {"resolved": True})
+
+    def reply(self, comment_id: str, message: str) -> dict:
+        """Reply to an existing comment. Returns the created reply.
+        
+        Replies are implemented as child comments with parentId set to the
+        parent comment's ID.
+        """
+        # Get the parent comment to extract its context
+        parent = self.s.get(f"/comments/{comment_id}")
+        
+        body: dict = {
+            "message": message,
+            "objectId": parent.get("objectId"),
+            "objectType": parent.get("objectType"),
+            "elementId": parent.get("elementId"),
+            "parentId": comment_id,  # Link to parent comment
+        }
+        if parent.get("elementQuery"):
+            body["elementQuery"] = parent.get("elementQuery")
+        
+        return self.s.post(f"/comments?did={self.ctx.did}", body)
+

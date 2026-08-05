@@ -2,7 +2,7 @@
 name: cad
 description: "Naval & mechanical CAD design agent. Orchestrates a 5-phase pipeline from idea to fabrication: specifications → JAX math (Metal GPU) → FeatureScript generation → Onshape injection (session REST + commit) → QA validation → export. Use for designing hulls, foils, sandwich structures, or mechanical parts for 3D printing. Triggered by: design a hull, model a dinghy, CAD from specs, naval architecture, Onshape automation."
 mode: primary
-model: opencode-go/deepseek-v4-pro
+model: opencode-go/qwen3.7-plus
 color: info
 ---
 
